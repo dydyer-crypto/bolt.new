@@ -4,7 +4,7 @@
 
 This fork of Bolt.new allows you to choose the LLM that you use for each prompt! Currently, you can use OpenAI, Anthropic, Ollama, OpenRouter, Gemini, or Groq models - and it is easily extended to use any other model supported by the Vercel AI SDK! See the instructions below for running this locally and extending it to include more models.
 
-# Requested Additions to this Fork - Feel Free to Contribute!!
+# Requested Additions to this Fork - Feel Free to Contribute
 
 - ✅ OpenRouter Integration (@coleam00)
 - ✅ Gemini Integration (@jonathands)
@@ -43,13 +43,14 @@ Bolt.new is an AI-powered web development agent that allows you to prompt, run, 
 Claude, v0, etc are incredible- but you can't install packages, run backends, or edit code. That’s where Bolt.new stands out:
 
 - **Full-Stack in the Browser**: Bolt.new integrates cutting-edge AI models with an in-browser development environment powered by **StackBlitz’s WebContainers**. This allows you to:
+
   - Install and run npm tools and libraries (like Vite, Next.js, and more)
   - Run Node.js servers
   - Interact with third-party APIs
   - Deploy to production from chat
   - Share your work via a URL
 
-- **AI with Environment Control**: Unlike traditional dev environments where the AI can only assist in code generation, Bolt.new gives AI models **complete control** over the entire  environment including the filesystem, node server, package manager, terminal, and browser console. This empowers AI agents to handle the whole app lifecycle—from creation to deployment.
+- **AI with Environment Control**: Unlike traditional dev environments where the AI can only assist in code generation, Bolt.new gives AI models **complete control** over the entire environment including the filesystem, node server, package manager, terminal, and browser console. This empowers AI agents to handle the whole app lifecycle—from creation to deployment.
 
 Whether you’re an experienced developer, a PM, or a designer, Bolt.new allows you to easily build production-grade full-stack applications.
 
@@ -92,9 +93,33 @@ VITE_LOG_LEVEL=debug
 
 **Important**: Never commit your `.env.local` file to version control. It's already included in .gitignore.
 
-## Adding New LLMs:
+Also optionally, if you want to change the network (instead of localhost) and port, you can change the vite.config.ts
+file and add:
 
-To make new LLMs available to use in this version of Bolt.new, head on over to `app/utils/constants.ts` and find the constant MODEL_LIST. Each element in this array is an object that has the model ID for the name (get this from the provider's API documentation), a label for the frontend model dropdown, and the provider. 
+```
+server: { host: '0.0.0.0', port: '8080'}
+```
+
+Example vite.config.ts file
+
+```
+...
+export default defineConfig((config) => {
+  return {
+    server: {
+      host: '0.0.0.0',
+    },
+    build: {
+      target: 'esnext',
+    },
+...
+```
+
+````
+
+## Adding New LLMs
+
+To make new LLMs available to use in this version of Bolt.new, head on over to `app/utils/constants.ts` and find the constant MODEL_LIST. Each element in this array is an object that has the model ID for the name (get this from the provider's API documentation), a label for the frontend model dropdown, and the provider.
 
 By default, Anthropic, OpenAI, Groq, and Ollama are implemented as providers, but the YouTube video for this repo covers how to extend this to work with more providers if you wish!
 
@@ -117,7 +142,7 @@ To start the development server:
 
 ```bash
 pnpm run dev
-```
+````
 
 This will start the Remix Vite development server. You will need Google Chrome Canary to run this locally if you use Chrome! It's an easy install and a good browser for web development anyway.
 
