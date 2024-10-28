@@ -12,6 +12,7 @@ import { TerminalStore } from './terminal';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { Octokit } from "@octokit/rest";
+import { logger } from '~/utils/logger';
 
 export interface ArtifactState {
   id: string;
@@ -438,6 +439,78 @@ export class WorkbenchStore {
     } catch (error) {
       console.error('Error pushing to GitHub:', error instanceof Error ? error.message : String(error));
     }
+  }
+  async uploadFolder(files: FileList | null) {
+    if (!files || import.meta.env.SSR) return;
+
+    const ignoredFiles = [
+      '.git/',
+      '.gitignore',
+      '.DS_Store',
+      '.vscode/',
+      'node_modules',
+      '.lock',
+      '-lock.json',
+      'bin/',
+      'obj/',
+      'packages/',
+      'dist/',
+      'build/',
+    ];
+
+    const container = await webcontainer; // Access the webcontainer instance
+
+    const folders = new Set(
+      Array.from(files).flatMap((file) => {
+        const filePath = file.webkitRelativePath || file.name;
+        if (ignoredFiles.some((ignoredFile) => filePath.includes(ignoredFile))) {
+          return [];
+        }
+        const parts = filePath.split('/').slice(0, -1);
+        return parts.map((_, i) => parts.slice(0, i + 1).join('/'));
+      }),
+    );
+
+    for (const folder of folders) {
+      await container.fs.mkdir(folder, { recursive: true }); // Create folders recursively
+    }
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const filePath = file.webkitRelativePath || file.name;
+
+      if (ignoredFiles.some((ignoredFile) => filePath.includes(ignoredFile))) {
+        continue;
+      }
+
+      try {
+        const content = await this.#readFileContent(file);
+        await container.fs.writeFile(filePath, content);
+      } catch (error) {
+        logger.error('Failed to create file\n\n', error);
+      }
+    }
+  }
+
+  #readFileContent(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+
+      reader.onload = (event) => {
+        const result = event.target?.result;
+        if (typeof result === 'string') {
+          resolve(result);
+        } else {
+          reject(new Error('Failed to read file content'));
+        }
+      };
+
+      reader.onerror = () => {
+        reject(new Error('Failed to read file'));
+      };
+
+      reader.readAsText(file); // Adjust if binary file handling is required
+    });
   }
 }
 

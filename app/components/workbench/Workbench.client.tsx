@@ -9,6 +9,7 @@ import {
 } from '~/components/editor/codemirror/CodeMirrorEditor';
 import { IconButton } from '~/components/ui/IconButton';
 import { PanelHeaderButton } from '~/components/ui/PanelHeaderButton';
+import { PanelHeaderFileInput } from '../ui/PanelHeaderFileUpload';
 import { Slider, type SliderOptions } from '~/components/ui/Slider';
 import { workbenchStore, type WorkbenchViewType } from '~/lib/stores/workbench';
 import { classNames } from '~/utils/classNames';
@@ -137,9 +138,21 @@ export const Workbench = memo(({ chatStarted, isStreaming }: WorkspaceProps) => 
             <div className="h-full flex flex-col bg-bolt-elements-background-depth-2 border border-bolt-elements-borderColor shadow-sm rounded-lg overflow-hidden">
               <div className="flex items-center px-3 py-2 border-b border-bolt-elements-borderColor">
                 <Slider selected={selectedView} options={sliderOptions} setSelected={setSelectedView} />
+                <input type="file[]" id="file" style={{ display: 'none' }} />
                 <div className="ml-auto" />
                 {selectedView === 'code' && (
                   <>
+                    <PanelHeaderFileInput
+                      className="mr-1 text-sm"
+                      folderSelection={true}
+                      onChange={(files) => {
+                        toast.info('Please do not forget that AI is not aware of the files uploaded.');
+                        workbenchStore.uploadFolder(files);
+                      }}
+                    >
+                      <div className="i-ph:upload" />
+                      Upload Folder
+                    </PanelHeaderFileInput>
                     <PanelHeaderButton
                       className="mr-1 text-sm"
                       onClick={() => {
