@@ -75,6 +75,11 @@ git clone https://github.com/coleam00/bolt.new-any-llm.git
 ```bash
 pnpm install
 ```
+NOTE: If you don't have the pnpm command installed, you can install pnpm with
+
+```bash
+npm i pnpm --global
+```
 
 3. Rename `.env.example` to .env.local and add your LLM API keys (you only have to set the ones you want to use and Ollama doesn't need an API key because it runs locally on your computer):
 
