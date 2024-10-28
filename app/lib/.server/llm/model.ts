@@ -57,6 +57,15 @@ export function getGroqModel(apiKey: string, model: string) {
   return openai(model);
 }
 
+export function getPerplexityModel(apiKey: string, model: string) {
+  const perplexity = createOpenAI({
+    baseURL: 'https://api.perplexity.ai/',
+    apiKey,
+  });
+
+  return perplexity(model);
+}
+
 export function getOllamaModel(baseURL: string, model: string) {
   let Ollama = ollama(model);
   Ollama.config.baseURL = `${baseURL}/api`;
@@ -101,6 +110,8 @@ export function getModel(provider: string, model: string, env: Env) {
       return getDeepseekModel(apiKey, model)
     case 'Mistral':
       return  getMistralModel(apiKey, model);
+    case 'Perplexity':
+      return getPerplexityModel(apiKey, model);
     default:
       return getOllamaModel(baseURL, model);
   }

@@ -43,6 +43,11 @@ const staticModels: ModelInfo[] = [
   { name: 'mistral-small-latest', label: 'Mistral Small', provider: 'Mistral' },
   { name: 'codestral-latest', label: 'Codestral', provider: 'Mistral' },
   { name: 'mistral-large-latest', label: 'Mistral Large Latest', provider: 'Mistral' },
+  { name: 'llama-3.1-sonar-small-128k-online', label: 'Sonar Small Online', provider: 'Perplexity' },
+  { name: 'llama-3.1-sonar-large-128k-online', label: 'Sonar Large Online', provider: 'Perplexity' },
+  { name: 'llama-3.1-sonar-huge-128k-online', label: 'Sonar Huge Online', provider: 'Perplexity' },
+  { name: 'llama-3.1-sonar-small-128k-chat', label: 'Sonar Small Chat', provider: 'Perplexity' },
+  { name: 'llama-3.1-sonar-large-128k-chat', label: 'Sonar Large Chat', provider: 'Perplexity'},
 ];
 
 export let MODEL_LIST: ModelInfo[] = [...staticModels];
