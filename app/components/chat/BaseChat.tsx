@@ -48,6 +48,9 @@ const ModelSelector = ({ model, setModel, modelList, providerList }) => {
         <option key="OpenAILike" value="OpenAILike">
           OpenAILike
         </option>
+        <option key="AzureOpenAI" value="AzureOpenAI">
+          AzureOpenAI
+        </option>
       </select>
       <select
         value={model}

@@ -13,6 +13,8 @@ export function getAPIKey(cloudflareEnv: Env, provider: string) {
       return env.ANTHROPIC_API_KEY || cloudflareEnv.ANTHROPIC_API_KEY;
     case 'OpenAI':
       return env.OPENAI_API_KEY || cloudflareEnv.OPENAI_API_KEY;
+    case 'AzureOpenAI':
+        return env.AZURE_OPENAI_API_KEY || cloudflareEnv.AZURE_OPENAI_API_KEY;
     case 'Google':
       return env.GOOGLE_GENERATIVE_AI_API_KEY || cloudflareEnv.GOOGLE_GENERATIVE_AI_API_KEY;
     case 'Groq':
@@ -34,6 +36,8 @@ export function getBaseURL(cloudflareEnv: Env, provider: string) {
   switch (provider) {
     case 'OpenAILike':
       return env.OPENAI_LIKE_API_BASE_URL || cloudflareEnv.OPENAI_LIKE_API_BASE_URL;
+    case 'AzureOpenAI':
+      return env.AZURE_OPENAI_API_BASE_URL || cloudflareEnv.AZURE_OPENAI_API_BASE_URL;
     case 'Ollama':
         return env.OLLAMA_API_BASE_URL || cloudflareEnv.OLLAMA_API_BASE_URL || "http://localhost:11434";
     default:

@@ -1,6 +1,6 @@
 // @ts-nocheck
 // Preventing TS checks with files presented in the video for a better presentation.
-import { getAPIKey, getBaseURL } from '~/lib/.server/llm/api-key';
+import { getAPIKey, getBaseURL, getResourceName } from '~/lib/.server/llm/api-key';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
@@ -8,6 +8,7 @@ import { ollama } from 'ollama-ai-provider';
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { mistral } from '@ai-sdk/mistral';
 import { createMistral } from '@ai-sdk/mistral';
+import { createAzure } from '@ai-sdk/azure'; 
 
 export function getAnthropicModel(apiKey: string, model: string) {
   const anthropic = createAnthropic({
@@ -30,6 +31,27 @@ export function getOpenAIModel(apiKey: string, model: string) {
   });
 
   return openai(model);
+}
+
+export function getAzureOpenAIModel(baseURL:string,apiKey: string, model: string) {
+  function extractResourceName(url) {
+    const regex = /^https:\/\/([^\.]+)\./;
+    const match = url.match(regex);
+    if (match && match[1]) {
+      return match[1];
+    } else {
+      return null; // or throw an error, depending on how you want to handle this case
+    }
+  }
+  
+  const resourceName = extractResourceName(baseURL);
+
+  const azureOpenAI = createAzure({
+    apiKey,
+    resourceName: resourceName,
+  });
+
+  return azureOpenAI(model);
 }
 
 export function getMistralModel(apiKey: string, model: string) {
@@ -89,6 +111,8 @@ export function getModel(provider: string, model: string, env: Env) {
       return getAnthropicModel(apiKey, model);
     case 'OpenAI':
       return getOpenAIModel(apiKey, model);
+    case 'AzureOpenAI':
+      return getAzureOpenAIModel(baseURL,apiKey, model);
     case 'Groq':
       return getGroqModel(apiKey, model);
     case 'OpenRouter':

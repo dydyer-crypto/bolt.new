@@ -86,10 +86,38 @@ async function getOpenAILikeModels(): Promise<ModelInfo[]> {
  }
 
 }
+
+async function getAzureOpenAIModels(): Promise<ModelInfo[]> {
+  try {
+    const base_url = import.meta.env.AZURE_OPENAI_API_BASE_URL || "";
+    if (!base_url) {
+      return [];
+    }
+    const api_key = import.meta.env.AZURE_OPENAI_API_KEY;
+    const response = await fetch(`${base_url}/openai/deployments?api-version=2023-03-15-preview`, {
+      headers: {
+        'api-key': api_key
+      }
+    });
+    const res = await response.json() as any;
+
+    return res.data.map((model: any) => ({
+      name: model.id,
+      label: model.id,
+      provider: 'AzureOpenAI'
+    }));
+
+  } catch (e) {
+    return [];
+  }
+}
+
+
 async function initializeModelList(): Promise<void> {
   const ollamaModels = await getOllamaModels();
   const openAiLikeModels = await getOpenAILikeModels();
-  MODEL_LIST = [...ollamaModels,...openAiLikeModels, ...staticModels];
+  const azureOpenAIModels = await getAzureOpenAIModels();
+  MODEL_LIST = [...ollamaModels,...openAiLikeModels, ...staticModels, ...azureOpenAIModels];
 }
 initializeModelList().then();
-export { getOllamaModels, getOpenAILikeModels, initializeModelList };
+export { getOllamaModels, getOpenAILikeModels, getAzureOpenAIModels, initializeModelList };
