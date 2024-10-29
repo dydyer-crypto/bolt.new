@@ -7,16 +7,22 @@ import { bufferWatchEvents } from '~/utils/buffer';
 import { WORK_DIR } from '~/utils/constants';
 import { computeFileModifications } from '~/utils/diff';
 import { createScopedLogger } from '~/utils/logger';
-import { unreachable } from '~/utils/unreachable';
 
 const logger = createScopedLogger('FilesStore');
-
 const utf8TextDecoder = new TextDecoder('utf8', { fatal: true });
+
+const BATCH_WRITE_DELAY = 100; // ms
+const MAX_BATCH_SIZE = 1000; // files
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
 export interface File {
   type: 'file';
   content: string;
   isBinary: boolean;
+  metadata: {
+    lastModified: number;
+    size: number;
+  };
 }
 
 export interface Folder {
@@ -24,32 +30,32 @@ export interface Folder {
 }
 
 type Dirent = File | Folder;
-
 export type FileMap = Record<string, Dirent | undefined>;
 
-export class FilesStore {
-  #webcontainer: Promise<WebContainer>;
-
-  /**
-   * Tracks the number of files without folders.
-   */
-  #size = 0;
-
-  /**
-   * @note Keeps track all modified files with their original content since the last user message.
-   * Needs to be reset when the user sends another message and all changes have to be submitted
-   * for the model to be aware of the changes.
-   */
-  #modifiedFiles: Map<string, string> = import.meta.hot?.data.modifiedFiles ?? new Map();
-
-  /**
-   * Map of files that matches the state of WebContainer.
-   */
-  files: MapStore<FileMap> = import.meta.hot?.data.files ?? map({});
-
-  get filesCount() {
-    return this.#size;
+export class FilesStoreError extends Error {
+  constructor(message: string, public cause?: Error) {
+    super(message);
+    this.name = 'FilesStoreError';
   }
+}
+
+export class FilesStore {
+  readonly #webcontainer: Promise<WebContainer>;
+  #size = 0;
+  #modifiedFiles: Map<string, string> = import.meta.hot?.data.modifiedFiles ?? new Map();
+  files: MapStore<FileMap> = import.meta.hot?.data.files ?? map({});
+  
+  // Enhanced cache with metadata
+  #fileCache: Map<string, {
+    content: string;
+    lastModified: number;
+    size: number;
+    hash?: string;
+  }> = new Map();
+  
+  #pendingWrites: Map<string, string> = new Map();
+  #writeDebounceTimer: NodeJS.Timeout | null = null;
+  #isWriting = false;
 
   constructor(webcontainerPromise: Promise<WebContainer>) {
     this.#webcontainer = webcontainerPromise;
@@ -62,11 +68,32 @@ export class FilesStore {
     this.#init();
   }
 
-  getFile(filePath: string) {
-    const dirent = this.files.get()[filePath];
+  get filesCount() {
+    return this.#size;
+  }
 
+  get pendingWritesCount() {
+    return this.#pendingWrites.size;
+  }
+
+  async getFile(filePath: string): Promise<File | undefined> {
+    const dirent = this.files.get()[filePath];
     if (dirent?.type !== 'file') {
       return undefined;
+    }
+
+    // Try to get from cache first
+    const cached = this.#fileCache.get(filePath);
+    if (cached) {
+      return {
+        type: 'file',
+        content: cached.content,
+        isBinary: false,
+        metadata: {
+          lastModified: cached.lastModified,
+          size: cached.size
+        }
+      };
     }
 
     return dirent;
@@ -80,110 +107,198 @@ export class FilesStore {
     this.#modifiedFiles.clear();
   }
 
-  async saveFile(filePath: string, content: string) {
-    const webcontainer = await this.#webcontainer;
-
+  async saveFile(filePath: string, content: string): Promise<void> {
     try {
+      const webcontainer = await this.#webcontainer;
       const relativePath = nodePath.relative(webcontainer.workdir, filePath);
 
       if (!relativePath) {
-        throw new Error(`EINVAL: invalid file path, write '${relativePath}'`);
+        throw new FilesStoreError(`Invalid file path: ${filePath}`);
       }
 
-      const oldContent = this.getFile(filePath)?.content;
-
-      if (!oldContent) {
-        unreachable('Expected content to be defined');
+      // Size validation
+      const size = Buffer.byteLength(content);
+      if (size > MAX_FILE_SIZE) {
+        throw new FilesStoreError(`File size ${size} exceeds maximum allowed size of ${MAX_FILE_SIZE} bytes`);
       }
 
-      await webcontainer.fs.writeFile(relativePath, content);
+      // Check cache for unchanged content
+      const cached = this.#fileCache.get(filePath);
+      if (cached?.content === content) {
+        logger.debug('File content unchanged, skipping write:', filePath);
+        return;
+      }
 
+      // Update cache immediately
+      this.#fileCache.set(filePath, {
+        content,
+        lastModified: Date.now(),
+        size,
+      });
+
+      // Add to pending writes
+      this.#pendingWrites.set(filePath, content);
+
+      // Update files store immediately for UI responsiveness
+      this.files.setKey(filePath, {
+        type: 'file',
+        content,
+        isBinary: false,
+        metadata: {
+          lastModified: Date.now(),
+          size
+        }
+      });
+
+      // Track original content for modifications only if it's not already tracked
       if (!this.#modifiedFiles.has(filePath)) {
-        this.#modifiedFiles.set(filePath, oldContent);
+        const oldContent = (await this.getFile(filePath))?.content;
+        if (oldContent !== undefined) {
+          this.#modifiedFiles.set(filePath, oldContent);
+        }
       }
 
-      // we immediately update the file and don't rely on the `change` event coming from the watcher
-      this.files.setKey(filePath, { type: 'file', content, isBinary: false });
+      // Schedule batch write
+      this.#scheduleBatchWrite();
 
-      logger.info('File updated');
     } catch (error) {
-      logger.error('Failed to update file content\n\n', error);
-
+      logger.error('Failed to save file:', filePath, error);
       throw error;
     }
   }
 
   async #init() {
     const webcontainer = await this.#webcontainer;
-
     webcontainer.internal.watchPaths(
-      { include: [`${WORK_DIR}/**`], exclude: ['**/node_modules', '.git'], includeContent: true },
+      {
+        include: [`${WORK_DIR}/**`],
+        exclude: ['**/node_modules', '.git'],
+        includeContent: true
+      },
       bufferWatchEvents(100, this.#processEventBuffer.bind(this)),
     );
+  }
+
+  #scheduleBatchWrite() {
+    if (this.#writeDebounceTimer) {
+      clearTimeout(this.#writeDebounceTimer);
+    }
+
+    // If we have too many pending writes, process immediately
+    if (this.#pendingWrites.size >= MAX_BATCH_SIZE) {
+      this.#processBatchWrite();
+    } else {
+      this.#writeDebounceTimer = setTimeout(() => this.#processBatchWrite(), BATCH_WRITE_DELAY);
+    }
+  }
+
+  async #processBatchWrite() {
+    if (this.#isWriting || this.#pendingWrites.size === 0) {
+      return;
+    }
+
+    this.#isWriting = true;
+    const webcontainer = await this.#webcontainer;
+    const writes = Array.from(this.#pendingWrites.entries());
+    this.#pendingWrites.clear();
+
+    try {
+      await Promise.all(
+        writes.map(async ([filePath, content]) => {
+          const relativePath = nodePath.relative(webcontainer.workdir, filePath);
+          try {
+            await webcontainer.fs.writeFile(relativePath, content);
+            logger.debug('File written successfully:', filePath);
+          } catch (error) {
+            logger.error('Failed to write file:', filePath, error);
+            // Re-queue failed writes
+            this.#pendingWrites.set(filePath, content);
+          }
+        })
+      );
+    } finally {
+      this.#isWriting = false;
+      // Process any writes that were added during this batch
+      if (this.#pendingWrites.size > 0) {
+        this.#scheduleBatchWrite();
+      }
+    }
   }
 
   #processEventBuffer(events: Array<[events: PathWatcherEvent[]]>) {
     const watchEvents = events.flat(2);
 
     for (const { type, path, buffer } of watchEvents) {
-      // remove any trailing slashes
-      const sanitizedPath = path.replace(/\/+$/g, '');
+      const sanitizedPath = this.#sanitizePath(path);
 
       switch (type) {
-        case 'add_dir': {
-          // we intentionally add a trailing slash so we can distinguish files from folders in the file tree
+        case 'add_dir':
           this.files.setKey(sanitizedPath, { type: 'folder' });
           break;
-        }
-        case 'remove_dir': {
-          this.files.setKey(sanitizedPath, undefined);
 
-          for (const [direntPath] of Object.entries(this.files)) {
-            if (direntPath.startsWith(sanitizedPath)) {
-              this.files.setKey(direntPath, undefined);
-            }
-          }
-
+        case 'remove_dir':
+          this.#removeDirectory(sanitizedPath);
           break;
-        }
+
         case 'add_file':
-        case 'change': {
-          if (type === 'add_file') {
-            this.#size++;
-          }
-
-          let content = '';
-
-          /**
-           * @note This check is purely for the editor. The way we detect this is not
-           * bullet-proof and it's a best guess so there might be false-positives.
-           * The reason we do this is because we don't want to display binary files
-           * in the editor nor allow to edit them.
-           */
-          const isBinary = isBinaryFile(buffer);
-
-          if (!isBinary) {
-            content = this.#decodeFileContent(buffer);
-          }
-
-          this.files.setKey(sanitizedPath, { type: 'file', content, isBinary });
-
+        case 'change':
+          this.#handleFileChange(type, sanitizedPath, buffer);
           break;
-        }
-        case 'remove_file': {
-          this.#size--;
-          this.files.setKey(sanitizedPath, undefined);
+
+        case 'remove_file':
+          this.#removeFile(sanitizedPath);
           break;
-        }
-        case 'update_directory': {
-          // we don't care about these events
-          break;
-        }
       }
     }
   }
 
-  #decodeFileContent(buffer?: Uint8Array) {
+  #removeDirectory(path: string) {
+    this.files.setKey(path, undefined);
+    for (const [direntPath] of Object.entries(this.files.get())) {
+      if (direntPath.startsWith(path)) {
+        this.files.setKey(direntPath, undefined);
+        this.#fileCache.delete(direntPath);
+      }
+    }
+  }
+
+  #handleFileChange(type: 'add_file' | 'change', path: string, buffer?: Uint8Array) {
+    if (type === 'add_file') {
+      this.#size++;
+    }
+
+    const isBinary = this.#isBinaryFile(buffer);
+    const content = isBinary ? '' : this.#decodeFileContent(buffer);
+    const size = buffer?.byteLength ?? 0;
+
+    this.files.setKey(path, {
+      type: 'file',
+      content,
+      isBinary,
+      metadata: {
+        lastModified: Date.now(),
+        size
+      }
+    });
+
+    // Update cache
+    if (!isBinary) {
+      this.#fileCache.set(path, {
+        content,
+        lastModified: Date.now(),
+        size
+      });
+    }
+  }
+
+  #removeFile(path: string) {
+    this.#size--;
+    this.files.setKey(path, undefined);
+    this.#fileCache.delete(path);
+    this.#pendingWrites.delete(path);
+  }
+
+  #decodeFileContent(buffer?: Uint8Array): string {
     if (!buffer || buffer.byteLength === 0) {
       return '';
     }
@@ -191,30 +306,23 @@ export class FilesStore {
     try {
       return utf8TextDecoder.decode(buffer);
     } catch (error) {
-      console.log(error);
+      logger.error('Failed to decode file content:', error);
       return '';
     }
   }
-}
 
-function isBinaryFile(buffer: Uint8Array | undefined) {
-  if (buffer === undefined) {
-    return false;
+  #sanitizePath(path: string): string {
+    return path.replace(/\/+$/g, '');
   }
 
-  return getEncoding(convertToBuffer(buffer), { chunkLength: 100 }) === 'binary';
-}
+  #isBinaryFile(buffer: Uint8Array | undefined): boolean {
+    if (!buffer) return false;
+    return getEncoding(this.#convertToBuffer(buffer), { chunkLength: 100 }) === 'binary';
+  }
 
-/**
- * Converts a `Uint8Array` into a Node.js `Buffer` by copying the prototype.
- * The goal is to  avoid expensive copies. It does create a new typed array
- * but that's generally cheap as long as it uses the same underlying
- * array buffer.
- */
-function convertToBuffer(view: Uint8Array): Buffer {
-  const buffer = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
-
-  Object.setPrototypeOf(buffer, Buffer.prototype);
-
-  return buffer as Buffer;
+  #convertToBuffer(view: Uint8Array): Buffer {
+    const buffer = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+    Object.setPrototypeOf(buffer, Buffer.prototype);
+    return buffer as Buffer;
+  }
 }
