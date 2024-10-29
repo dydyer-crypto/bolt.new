@@ -132,6 +132,10 @@ export class WorkbenchStore {
 
       if (unsavedChanges) {
         newUnsavedFiles.add(currentDocument.filePath);
+        // Only mark as modified if the file exists
+        if (this.#filesStore.isExistingFile(currentDocument.filePath)) {
+          this.modifiedFiles.add(currentDocument.filePath);
+        }
       } else {
         newUnsavedFiles.delete(currentDocument.filePath);
       }
@@ -190,13 +194,8 @@ export class WorkbenchStore {
     }
 
     const { filePath } = currentDocument;
-    const file = this.#filesStore.getFile(filePath);
-
-    if (!file) {
-      return;
-    }
-
-    this.setCurrentDocumentContent(file.content);
+    this.#editorStore.resetFile(filePath);
+    this.modifiedFiles.delete(filePath);
   }
 
   async saveAllFiles() {
@@ -206,11 +205,12 @@ export class WorkbenchStore {
   }
 
   getFileModifcations() {
-    return this.#filesStore.getFileModifications();
+    return Array.from(this.modifiedFiles);
   }
 
   resetAllFileModifications() {
-    this.#filesStore.resetFileModifications();
+    this.modifiedFiles.clear();
+    this.unsavedFiles.set(new Set());
   }
 
   abortAllActions() {
@@ -232,7 +232,7 @@ export class WorkbenchStore {
       id,
       title,
       closed: false,
-      runner: new ActionRunner(webcontainer),
+      runner: new ActionRunner(webcontainer, this.#filesStore),
     });
   }
 
@@ -247,12 +247,26 @@ export class WorkbenchStore {
   }
 
   async addAction(data: ActionCallbackData) {
-    const { messageId } = data;
+    const { messageId, action } = data;
 
     const artifact = this.#getArtifact(messageId);
 
     if (!artifact) {
       unreachable('Artifact not found');
+    }
+
+    // Track file modifications for file actions, but only for existing files
+    if (action.type === 'file') {
+      const filePath = action.filePath;
+      // Only track modifications for existing files
+      if (this.#filesStore.isExistingFile(filePath)) {
+        this.modifiedFiles.add(filePath);
+        
+        // Update unsavedFiles since this is a modification of an existing file
+        const newUnsavedFiles = new Set(this.unsavedFiles.get());
+        newUnsavedFiles.add(filePath);
+        this.unsavedFiles.set(newUnsavedFiles);
+      }
     }
 
     artifact.runner.addAction(data);
@@ -336,7 +350,6 @@ export class WorkbenchStore {
   }
 
   async pushToGitHub(repoName: string, githubUsername: string, ghToken: string) {
-    
     try {
       // Get the GitHub auth token from environment variables
       const githubToken = ghToken;
@@ -351,7 +364,7 @@ export class WorkbenchStore {
       const octokit = new Octokit({ auth: githubToken });
   
       // Check if the repository already exists before creating it
-      let repo
+      let repo;
       try {
         repo = await octokit.repos.get({ owner: owner, repo: repoName });
       } catch (error) {
@@ -362,7 +375,7 @@ export class WorkbenchStore {
             private: false,
             auto_init: true,
           });
-          repo = newRepo;
+          repo = { owner: { login: owner }, name: repoName, default_branch: 'main', ...newRepo };
         } else {
           console.log('cannot create repo!');
           throw error; // Some other error occurred
@@ -380,8 +393,8 @@ export class WorkbenchStore {
         Object.entries(files).map(async ([filePath, dirent]) => {
           if (dirent?.type === 'file' && dirent.content) {
             const { data: blob } = await octokit.git.createBlob({
-              owner: repo.owner.login,
-              repo: repo.name,
+              owner: owner,
+              repo: repoName,
               content: Buffer.from(dirent.content).toString('base64'),
               encoding: 'base64',
             });
@@ -398,16 +411,16 @@ export class WorkbenchStore {
   
       // Get the latest commit SHA (assuming main branch, update dynamically if needed)
       const { data: ref } = await octokit.git.getRef({
-        owner: repo.owner.login,
-        repo: repo.name,
+        owner: owner,
+        repo: repoName,
         ref: `heads/${repo.default_branch || 'main'}`, // Handle dynamic branch
       });
       const latestCommitSha = ref.object.sha;
   
       // Create a new tree
       const { data: newTree } = await octokit.git.createTree({
-        owner: repo.owner.login,
-        repo: repo.name,
+        owner: owner,
+        repo: repoName,
         base_tree: latestCommitSha,
         tree: validBlobs.map((blob) => ({
           path: blob!.path,
@@ -419,8 +432,8 @@ export class WorkbenchStore {
   
       // Create a new commit
       const { data: newCommit } = await octokit.git.createCommit({
-        owner: repo.owner.login,
-        repo: repo.name,
+        owner: owner,
+        repo: repoName,
         message: 'Initial commit from your app',
         tree: newTree.sha,
         parents: [latestCommitSha],
@@ -428,15 +441,16 @@ export class WorkbenchStore {
   
       // Update the reference
       await octokit.git.updateRef({
-        owner: repo.owner.login,
-        repo: repo.name,
+        owner: owner,
+        repo: repoName,
         ref: `heads/${repo.default_branch || 'main'}`, // Handle dynamic branch
         sha: newCommit.sha,
       });
   
-      alert(`Repository created and code pushed: ${repo.html_url}`);
+      return repo.html_url;
     } catch (error) {
       console.error('Error pushing to GitHub:', error instanceof Error ? error.message : String(error));
+      throw error;
     }
   }
 }

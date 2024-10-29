@@ -9,6 +9,7 @@ import {
   type OnSaveCallback as OnEditorSave,
   type OnScrollCallback as OnEditorScroll,
 } from '~/components/editor/codemirror/CodeMirrorEditor';
+import { VersionHistory } from '~/components/editor/VersionHistory';
 import { IconButton } from '~/components/ui/IconButton';
 import { PanelHeader } from '~/components/ui/PanelHeader';
 import { PanelHeaderButton } from '~/components/ui/PanelHeaderButton';
@@ -75,10 +76,6 @@ export const EditorPanel = memo(
 
       return editorDocument.filePath.split('/');
     }, [editorDocument]);
-
-    const activeFileUnsaved = useMemo(() => {
-      return editorDocument !== undefined && unsavedFiles?.has(editorDocument.filePath);
-    }, [editorDocument, unsavedFiles]);
 
     useEffect(() => {
       const unsubscribeFromEventEmitter = shortcutEventEmitter.on('toggleTerminal', () => {
@@ -149,7 +146,7 @@ export const EditorPanel = memo(
                 {activeFileSegments?.length && (
                   <div className="flex items-center flex-1 text-sm">
                     <FileBreadcrumb pathSegments={activeFileSegments} files={files} onFileSelect={onFileSelect} />
-                    {activeFileUnsaved && (
+                    {editorDocument && (
                       <div className="flex gap-1 ml-auto -mr-1.5">
                         <PanelHeaderButton onClick={onFileSave}>
                           <div className="i-ph:floppy-disk-duotone" />
@@ -164,17 +161,24 @@ export const EditorPanel = memo(
                   </div>
                 )}
               </PanelHeader>
-              <div className="h-full flex-1 overflow-hidden">
-                <CodeMirrorEditor
-                  theme={theme}
-                  editable={!isStreaming && editorDocument !== undefined}
-                  settings={editorSettings}
-                  doc={editorDocument}
-                  autoFocusOnDocumentChange={!isMobile()}
-                  onScroll={onEditorScroll}
-                  onChange={onEditorChange}
-                  onSave={onFileSave}
-                />
+              <div className="flex flex-col h-full flex-1 overflow-hidden">
+                <div className="flex-1">
+                  <CodeMirrorEditor
+                    theme={theme}
+                    editable={!isStreaming && editorDocument !== undefined}
+                    settings={editorSettings}
+                    doc={editorDocument}
+                    autoFocusOnDocumentChange={!isMobile()}
+                    onScroll={onEditorScroll}
+                    onChange={onEditorChange}
+                    onSave={onFileSave}
+                  />
+                </div>
+                {editorDocument && (
+                  <div className="border-t border-bolt-elements-borderColor">
+                    <VersionHistory filePath={editorDocument.filePath} />
+                  </div>
+                )}
               </div>
             </Panel>
           </PanelGroup>
