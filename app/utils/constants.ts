@@ -1,5 +1,4 @@
-import type { ModelInfo, OllamaApiResponse, OllamaModel } from './types';
-
+import type { ModelInfo } from './types';
 export const WORK_DIR_NAME = 'project';
 export const WORK_DIR = `/home/${WORK_DIR_NAME}`;
 export const MODIFICATIONS_TAG_NAME = 'bolt_file_modifications';
@@ -46,50 +45,52 @@ const staticModels: ModelInfo[] = [
 ];
 
 export let MODEL_LIST: ModelInfo[] = [...staticModels];
+export const PROVIDER_LIST: string[] = ['Ollama', 'OpenAILike']
 
-async function getOllamaModels(): Promise<ModelInfo[]> {
-  try {
-    const base_url = import.meta.env.OLLAMA_API_BASE_URL || "http://localhost:11434";
-    const response = await fetch(`${base_url}/api/tags`);
-    const data = await response.json() as OllamaApiResponse;
-
-    return data.models.map((model: OllamaModel) => ({
-      name: model.name,
-      label: `${model.name} (${model.details.parameter_size})`,
-      provider: 'Ollama',
-    }));
-  } catch (e) {
-    return [];
+export function hasModel(modelName:string,provider:string): boolean {
+  for (const model of MODEL_LIST) {
+    if ( model.provider === provider && model.name === modelName) {
+      return true;
+    }
   }
+  return false
+}
+export const IS_SERVER = typeof window === 'undefined';
+
+export function setModelList(models: ModelInfo[]): void {
+  MODEL_LIST = models;
 }
 
-async function getOpenAILikeModels(): Promise<ModelInfo[]> {
- try {
-   const base_url =import.meta.env.OPENAI_LIKE_API_BASE_URL || "";
-   if (!base_url) {
-      return [];
-   }
-   const api_key = import.meta.env.OPENAI_LIKE_API_KEY ?? "";
-   const response = await fetch(`${base_url}/models`, {
-     headers: {
-       Authorization: `Bearer ${api_key}`,
-     }
-   });
-    const res = await response.json() as any;
-    return res.data.map((model: any) => ({
-      name: model.id,
-      label: model.id,
-      provider: 'OpenAILike',
-    }));
- }catch (e) {
-   return []
- }
+export function getStaticModels(): ModelInfo[] {
+  return [...staticModels];
+}
+export let isInitialized = false;
 
+export type ModelListInfo= {
+  modelList: ModelInfo[],
+  providerList: string[]
 }
-async function initializeModelList(): Promise<void> {
-  const ollamaModels = await getOllamaModels();
-  const openAiLikeModels = await getOpenAILikeModels();
-  MODEL_LIST = [...ollamaModels,...openAiLikeModels, ...staticModels];
+
+export async function initializeModelList(): Promise<ModelListInfo> {
+  if (isInitialized) {
+    return getModelListInfo();
+  }
+
+  if (IS_SERVER) {
+    isInitialized = true;
+    return getModelListInfo();
+  }
+
+  isInitialized = true;
+  const response = await fetch('/api/models');
+  MODEL_LIST = (await response.json()) as ModelInfo[];
+
+  return getModelListInfo();
 }
-initializeModelList().then();
-export { getOllamaModels, getOpenAILikeModels, initializeModelList };
+
+export function getModelListInfo(): ModelListInfo {
+  return {
+    modelList: MODEL_LIST,
+    providerList: [...new Set([...MODEL_LIST.map(m => m.provider), ...PROVIDER_LIST])]
+  };
+}

@@ -7,12 +7,11 @@ import { Menu } from '~/components/sidebar/Menu.client';
 import { IconButton } from '~/components/ui/IconButton';
 import { Workbench } from '~/components/workbench/Workbench.client';
 import { classNames } from '~/utils/classNames';
-import { MODEL_LIST, DEFAULT_PROVIDER } from '~/utils/constants';
 import { Messages } from './Messages.client';
 import { SendButton } from './SendButton.client';
-import { useState } from 'react';
 
 import styles from './BaseChat.module.scss';
+import type { ModelInfo } from '~/utils/types';
 
 const EXAMPLE_PROMPTS = [
   { text: 'Build a todo app in React using Tailwind' },
@@ -22,36 +21,33 @@ const EXAMPLE_PROMPTS = [
   { text: 'How do I center a div?' },
 ];
 
-const providerList = [...new Set(MODEL_LIST.map((model) => model.provider))]
 
-const ModelSelector = ({ model, setModel, modelList, providerList }) => {
-  const [provider, setProvider] = useState(DEFAULT_PROVIDER);
+
+function ModelSelector({ model, setModel ,provider,setProvider,modelList,providerList}) {
+
+
+
+
   return (
     <div className="mb-2">
       <select
         value={provider}
         onChange={(e) => {
           setProvider(e.target.value);
-          const firstModel = [...modelList].find(m => m.provider == e.target.value);
+          const firstModel = modelList.find((m) => m.provider === e.target.value);
           setModel(firstModel ? firstModel.name : '');
         }}
         className="w-full p-2 rounded-lg border border-bolt-elements-borderColor bg-bolt-elements-prompt-background text-bolt-elements-textPrimary focus:outline-none"
       >
-        {providerList.map((provider) => (
-          <option key={provider} value={provider}>
-            {provider}
-          </option>
-        ))}
-        <option key="Ollama" value="Ollama">
-          Ollama
-        </option>
-        <option key="OpenAILike" value="OpenAILike">
-          OpenAILike
-        </option>
+        {providerList.map(providerName=>( <option key={providerName} value={providerName}>
+          {providerName}
+        </option>))}
       </select>
       <select
         value={model}
-        onChange={(e) => setModel(e.target.value)}
+        onChange={(e) => {
+          setModel(e.target.value)
+        }}
         className="w-full p-2 rounded-lg border border-bolt-elements-borderColor bg-bolt-elements-prompt-background text-bolt-elements-textPrimary focus:outline-none"
       >
         {[...modelList].filter(e => e.provider == provider && e.name).map((modelOption) => (
@@ -62,7 +58,7 @@ const ModelSelector = ({ model, setModel, modelList, providerList }) => {
       </select>
     </div>
   );
-};
+}
 
 const TEXTAREA_MIN_HEIGHT = 76;
 
@@ -77,8 +73,12 @@ interface BaseChatProps {
   enhancingPrompt?: boolean;
   promptEnhanced?: boolean;
   input?: string;
-  model: string;
-  setModel: (model: string) => void;
+  model?: string;
+  setModel?: (model: string) => void;
+  provider?: string;
+  setProvider?: (provider: string) => void;
+  modelList?: ModelInfo[];
+  providerList?: string[];
   handleStop?: () => void;
   sendMessage?: (event: React.UIEvent, messageInput?: string) => void;
   handleInputChange?: (event: React.ChangeEvent<HTMLTextAreaElement>) => void;
@@ -100,6 +100,10 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
       input = '',
       model,
       setModel,
+      provider,
+      setProvider,
+      modelList,
+      providerList,
       sendMessage,
       handleInputChange,
       enhancePrompt,
@@ -108,7 +112,6 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
     ref,
   ) => {
     const TEXTAREA_MAX_HEIGHT = chatStarted ? 400 : 200;
-
     return (
       <div
         ref={ref}
@@ -156,7 +159,9 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                 <ModelSelector
                   model={model}
                   setModel={setModel}
-                  modelList={MODEL_LIST}
+                  provider={provider}
+                  setProvider={setProvider}
+                  modelList={modelList}
                   providerList={providerList}
                 />
                 <div
@@ -174,7 +179,6 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                         }
 
                         event.preventDefault();
-
                         sendMessage?.(event);
                       }
                     }}

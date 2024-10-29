@@ -6,7 +6,6 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { ollama } from 'ollama-ai-provider';
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
-import { mistral } from '@ai-sdk/mistral';
 import { createMistral } from '@ai-sdk/mistral';
 
 export function getAnthropicModel(apiKey: string, model: string) {
@@ -80,27 +79,27 @@ export function getOpenRouterModel(apiKey: string, model: string) {
   return openRouter.chat(model);
 }
 
-export function getModel(provider: string, model: string, env: Env) {
-  const apiKey = getAPIKey(env, provider);
+export function getModel(provider: string, model: string,apiKey:string, env: Env) {
+  const _apiKey = apiKey || getAPIKey(env, provider);
   const baseURL = getBaseURL(env, provider);
 
   switch (provider) {
     case 'Anthropic':
-      return getAnthropicModel(apiKey, model);
+      return getAnthropicModel(_apiKey, model);
     case 'OpenAI':
-      return getOpenAIModel(apiKey, model);
+      return getOpenAIModel(_apiKey, model);
     case 'Groq':
-      return getGroqModel(apiKey, model);
+      return getGroqModel(_apiKey, model);
     case 'OpenRouter':
-      return getOpenRouterModel(apiKey, model);
+      return getOpenRouterModel(_apiKey, model);
     case 'Google':
-      return getGoogleModel(apiKey, model)
+      return getGoogleModel(_apiKey, model)
     case 'OpenAILike':
-      return getOpenAILikeModel(baseURL,apiKey, model);
+      return getOpenAILikeModel(baseURL,_apiKey, model);
     case 'Deepseek':
-      return getDeepseekModel(apiKey, model)
+      return getDeepseekModel(_apiKey, model)
     case 'Mistral':
-      return  getMistralModel(apiKey, model);
+      return  getMistralModel(_apiKey, model);
     default:
       return getOllamaModel(baseURL, model);
   }
