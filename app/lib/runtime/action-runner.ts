@@ -5,6 +5,9 @@ import type { BoltAction } from '~/types/actions';
 import { createScopedLogger } from '~/utils/logger';
 import { unreachable } from '~/utils/unreachable';
 import type { ActionCallbackData } from './message-parser';
+import { versionHistoryStore } from '../stores/version-history';
+import { workbenchStore } from '../stores/workbench';
+import type { FilesStore } from '../stores/files';
 
 const logger = createScopedLogger('ActionRunner');
 
@@ -35,12 +38,14 @@ type ActionsMap = MapStore<Record<string, ActionState>>;
 
 export class ActionRunner {
   #webcontainer: Promise<WebContainer>;
+  #filesStore: FilesStore;
   #currentExecutionPromise: Promise<void> = Promise.resolve();
 
   actions: ActionsMap = map({});
 
-  constructor(webcontainerPromise: Promise<WebContainer>) {
+  constructor(webcontainerPromise: Promise<WebContainer>, filesStore: FilesStore) {
     this.#webcontainer = webcontainerPromise;
+    this.#filesStore = filesStore;
   }
 
   addAction(data: ActionCallbackData) {
@@ -50,7 +55,6 @@ export class ActionRunner {
     const action = actions[actionId];
 
     if (action) {
-      // action already added
       return;
     }
 
@@ -115,8 +119,6 @@ export class ActionRunner {
       this.#updateAction(actionId, { status: action.abortSignal.aborted ? 'aborted' : 'complete' });
     } catch (error) {
       this.#updateAction(actionId, { status: 'failed', error: 'Action failed' });
-
-      // re-throw the error to be caught in the promise chain
       throw error;
     }
   }
@@ -145,7 +147,6 @@ export class ActionRunner {
     );
 
     const exitCode = await process.exit;
-
     logger.debug(`Process terminated with code ${exitCode}`);
   }
 
@@ -157,8 +158,6 @@ export class ActionRunner {
     const webcontainer = await this.#webcontainer;
 
     let folder = nodePath.dirname(action.filePath);
-
-    // remove trailing slashes
     folder = folder.replace(/\/+$/g, '');
 
     if (folder !== '.') {
@@ -172,6 +171,19 @@ export class ActionRunner {
 
     try {
       await webcontainer.fs.writeFile(action.filePath, action.content);
+      
+      // Check if this is a modification of an existing file
+      if (this.#filesStore.isExistingFile(action.filePath)) {
+        // Only mark as modified if file existed before
+        const newUnsavedFiles = new Set(workbenchStore.unsavedFiles.get());
+        newUnsavedFiles.add(action.filePath);
+        workbenchStore.unsavedFiles.set(newUnsavedFiles);
+        versionHistoryStore.addVersion(action.filePath, action.content, 'Modified through chat');
+      } else {
+        // This is a new file
+        versionHistoryStore.addVersion(action.filePath, action.content, 'Initial version');
+      }
+      
       logger.debug(`File written ${action.filePath}`);
     } catch (error) {
       logger.error('Failed to write file\n\n', error);
@@ -180,7 +192,6 @@ export class ActionRunner {
 
   #updateAction(id: string, newState: ActionStateUpdate) {
     const actions = this.actions.get();
-
     this.actions.setKey(id, { ...actions[id], ...newState });
   }
 }

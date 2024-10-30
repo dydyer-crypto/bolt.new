@@ -1,6 +1,8 @@
 import { atom, computed, map, type MapStore, type WritableAtom } from 'nanostores';
 import type { EditorDocument, ScrollPosition } from '~/components/editor/codemirror/CodeMirrorEditor';
 import type { FileMap, FilesStore } from './files';
+import { versionHistoryStore } from './version-history';
+import { workbenchStore } from './workbench';
 
 export type EditorDocuments = Record<string, EditorDocument>;
 
@@ -8,6 +10,7 @@ type SelectedFile = WritableAtom<string | undefined>;
 
 export class EditorStore {
   #filesStore: FilesStore;
+  #originalContent: Map<string, string> = new Map();
 
   selectedFile: SelectedFile = import.meta.hot?.data.selectedFile ?? atom<string | undefined>();
   documents: MapStore<EditorDocuments> = import.meta.hot?.data.documents ?? map({});
@@ -42,12 +45,18 @@ export class EditorStore {
 
             const previousDocument = previousDocuments?.[filePath];
 
+            // Store original content for reset functionality
+            if (!this.#originalContent.has(filePath)) {
+              this.#originalContent.set(filePath, dirent.content);
+            }
+
             return [
               filePath,
               {
                 value: dirent.content,
                 filePath,
                 scroll: previousDocument?.scroll,
+                isBinary: dirent.isBinary,
               },
             ] as [string, EditorDocument];
           })
@@ -86,10 +95,30 @@ export class EditorStore {
     const contentChanged = currentContent !== newContent;
 
     if (contentChanged) {
+      // Add version when content changes
+      versionHistoryStore.addVersion(filePath, newContent, 'Modified in editor');
+
+      // Only mark as modified if it's an existing file
+      if (this.#filesStore.isExistingFile(filePath)) {
+        const newUnsavedFiles = new Set(workbenchStore.unsavedFiles.get());
+        newUnsavedFiles.add(filePath);
+        workbenchStore.unsavedFiles.set(newUnsavedFiles);
+      }
+
       this.documents.setKey(filePath, {
         ...documentState,
         value: newContent,
       });
+    }
+  }
+
+  resetFile(filePath: string) {
+    const originalContent = this.#originalContent.get(filePath);
+    if (originalContent) {
+      this.updateFile(filePath, originalContent);
+      const newUnsavedFiles = new Set(workbenchStore.unsavedFiles.get());
+      newUnsavedFiles.delete(filePath);
+      workbenchStore.unsavedFiles.set(newUnsavedFiles);
     }
   }
 }
