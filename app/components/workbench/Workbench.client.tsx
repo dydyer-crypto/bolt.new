@@ -79,6 +79,23 @@ export const Workbench = memo(({ chatStarted, isStreaming }: WorkspaceProps) => 
     workbenchStore.setDocuments(files);
   }, [files]);
 
+  // Force workbench to show when a file is selected or modified
+  useEffect(() => {
+    if (selectedFile || (currentDocument && unsavedFiles.has(currentDocument.filePath))) {
+      workbenchStore.showWorkbench.set(true);
+      workbenchStore.currentView.set('code');
+    }
+  }, [selectedFile, currentDocument, unsavedFiles]);
+
+  // Show version history for files modified through chat
+  useEffect(() => {
+    const currentFile = currentDocument?.filePath;
+    if (currentFile && files[currentFile]) {
+      workbenchStore.setShowWorkbench(true);
+      workbenchStore.currentView.set('code');
+    }
+  }, [files, currentDocument]);
+
   const onEditorChange = useCallback<OnEditorChange>((update) => {
     workbenchStore.setCurrentDocumentContent(update.content);
   }, []);
@@ -230,6 +247,7 @@ export const Workbench = memo(({ chatStarted, isStreaming }: WorkspaceProps) => 
     )
   );
 });
+
 interface ViewProps extends HTMLMotionProps<'div'> {
   children: JSX.Element;
 }

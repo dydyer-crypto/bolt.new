@@ -2,6 +2,7 @@ import { type ActionFunctionArgs } from '@remix-run/cloudflare';
 import { StreamingTextResponse, parseStreamPart } from 'ai';
 import { streamText } from '~/lib/.server/llm/stream-text';
 import { stripIndents } from '~/utils/stripIndent';
+import { promptCacheStore } from '~/lib/stores/prompt-cache';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -14,6 +15,22 @@ async function enhancerAction({ context, request }: ActionFunctionArgs) {
   const { message } = await request.json<{ message: string }>();
 
   try {
+    // Check cache first
+    const cachedPrompt = promptCacheStore.getEnhancedPrompt(message);
+    if (cachedPrompt) {
+      // Return cached result immediately with cache header
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode(cachedPrompt));
+          controller.close();
+        },
+      });
+      const response = new StreamingTextResponse(stream);
+      response.headers.set('x-from-cache', 'true');
+      return response;
+    }
+
+    // If not in cache, proceed with LLM call
     const result = await streamText(
       [
         {
@@ -32,6 +49,8 @@ async function enhancerAction({ context, request }: ActionFunctionArgs) {
       context.cloudflare.env,
     );
 
+    let enhancedPrompt = '';
+
     const transformStream = new TransformStream({
       transform(chunk, controller) {
         const processedChunk = decoder
@@ -42,13 +61,22 @@ async function enhancerAction({ context, request }: ActionFunctionArgs) {
           .map((part) => part.value)
           .join('');
 
+        // Accumulate the enhanced prompt
+        enhancedPrompt += processedChunk;
+        
         controller.enqueue(encoder.encode(processedChunk));
       },
+      flush() {
+        // Cache the complete enhanced prompt
+        promptCacheStore.addToCache(message, enhancedPrompt);
+      }
     });
 
     const transformedStream = result.toAIStream().pipeThrough(transformStream);
+    const response = new StreamingTextResponse(transformedStream);
+    response.headers.set('x-from-cache', 'false');
+    return response;
 
-    return new StreamingTextResponse(transformedStream);
   } catch (error) {
     console.log(error);
 

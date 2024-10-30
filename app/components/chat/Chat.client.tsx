@@ -91,7 +91,7 @@ export const ChatImpl = memo(({ initialMessages, storeMessageHistory }: ChatProp
     initialMessages,
   });
 
-  const { enhancingPrompt, promptEnhanced, enhancePrompt, resetEnhancer } = usePromptEnhancer();
+  const { enhancingPrompt, promptEnhanced, fromCache, enhancePrompt, resetEnhancer } = usePromptEnhancer();
   const { parsedMessages, parseMessages } = useMessageParser();
 
   const TEXTAREA_MAX_HEIGHT = chatStarted ? 400 : 200;
@@ -212,6 +212,7 @@ export const ChatImpl = memo(({ initialMessages, storeMessageHistory }: ChatProp
       isStreaming={isLoading}
       enhancingPrompt={enhancingPrompt}
       promptEnhanced={promptEnhanced}
+      fromCache={fromCache}
       sendMessage={sendMessage}
       model={model}
       setModel={setModel}

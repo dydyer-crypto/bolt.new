@@ -6,15 +6,18 @@ const logger = createScopedLogger('usePromptEnhancement');
 export function usePromptEnhancer() {
   const [enhancingPrompt, setEnhancingPrompt] = useState(false);
   const [promptEnhanced, setPromptEnhanced] = useState(false);
+  const [fromCache, setFromCache] = useState(false);
 
   const resetEnhancer = () => {
     setEnhancingPrompt(false);
     setPromptEnhanced(false);
+    setFromCache(false);
   };
 
   const enhancePrompt = async (input: string, setInput: (value: string) => void) => {
     setEnhancingPrompt(true);
     setPromptEnhanced(false);
+    setFromCache(false);
 
     const response = await fetch('/api/enhancer', {
       method: 'POST',
@@ -22,6 +25,10 @@ export function usePromptEnhancer() {
         message: input,
       }),
     });
+
+    // Check if response was from cache
+    const isCached = response.headers.get('x-from-cache') === 'true';
+    setFromCache(isCached);
 
     const reader = response.body?.getReader();
 
@@ -67,5 +74,11 @@ export function usePromptEnhancer() {
     }
   };
 
-  return { enhancingPrompt, promptEnhanced, enhancePrompt, resetEnhancer };
+  return { 
+    enhancingPrompt, 
+    promptEnhanced, 
+    fromCache,
+    enhancePrompt, 
+    resetEnhancer 
+  };
 }

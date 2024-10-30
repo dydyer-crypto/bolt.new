@@ -8,6 +8,8 @@ import { WORK_DIR } from '~/utils/constants';
 import { computeFileModifications } from '~/utils/diff';
 import { createScopedLogger } from '~/utils/logger';
 import { unreachable } from '~/utils/unreachable';
+import { versionHistoryStore } from './version-history';
+import { workbenchStore } from './workbench';
 
 const logger = createScopedLogger('FilesStore');
 
@@ -29,22 +31,10 @@ export type FileMap = Record<string, Dirent | undefined>;
 
 export class FilesStore {
   #webcontainer: Promise<WebContainer>;
-
-  /**
-   * Tracks the number of files without folders.
-   */
   #size = 0;
-
-  /**
-   * @note Keeps track all modified files with their original content since the last user message.
-   * Needs to be reset when the user sends another message and all changes have to be submitted
-   * for the model to be aware of the changes.
-   */
   #modifiedFiles: Map<string, string> = import.meta.hot?.data.modifiedFiles ?? new Map();
-
-  /**
-   * Map of files that matches the state of WebContainer.
-   */
+  #existingFiles: Set<string> = new Set();
+  #newFiles: Set<string> = new Set();
   files: MapStore<FileMap> = import.meta.hot?.data.files ?? map({});
 
   get filesCount() {
@@ -72,6 +62,10 @@ export class FilesStore {
     return dirent;
   }
 
+  isExistingFile(filePath: string) {
+    return this.#existingFiles.has(filePath);
+  }
+
   getFileModifications() {
     return computeFileModifications(this.files.get(), this.#modifiedFiles);
   }
@@ -80,7 +74,7 @@ export class FilesStore {
     this.#modifiedFiles.clear();
   }
 
-  async saveFile(filePath: string, content: string) {
+  async saveFile(filePath: string, content: string, description: string = 'File updated') {
     const webcontainer = await this.#webcontainer;
 
     try {
@@ -102,13 +96,21 @@ export class FilesStore {
         this.#modifiedFiles.set(filePath, oldContent);
       }
 
-      // we immediately update the file and don't rely on the `change` event coming from the watcher
+      // Add version to history
+      versionHistoryStore.addVersion(filePath, content, description);
+
+      // Mark file as modified only if it existed before
+      if (this.#existingFiles.has(filePath)) {
+        const newUnsavedFiles = new Set(workbenchStore.unsavedFiles.get());
+        newUnsavedFiles.add(filePath);
+        workbenchStore.unsavedFiles.set(newUnsavedFiles);
+      }
+
       this.files.setKey(filePath, { type: 'file', content, isBinary: false });
 
       logger.info('File updated');
     } catch (error) {
       logger.error('Failed to update file content\n\n', error);
-
       throw error;
     }
   }
@@ -126,57 +128,72 @@ export class FilesStore {
     const watchEvents = events.flat(2);
 
     for (const { type, path, buffer } of watchEvents) {
-      // remove any trailing slashes
       const sanitizedPath = path.replace(/\/+$/g, '');
 
       switch (type) {
         case 'add_dir': {
-          // we intentionally add a trailing slash so we can distinguish files from folders in the file tree
           this.files.setKey(sanitizedPath, { type: 'folder' });
           break;
         }
         case 'remove_dir': {
           this.files.setKey(sanitizedPath, undefined);
+          this.#existingFiles.delete(sanitizedPath);
 
           for (const [direntPath] of Object.entries(this.files)) {
             if (direntPath.startsWith(sanitizedPath)) {
               this.files.setKey(direntPath, undefined);
+              this.#existingFiles.delete(direntPath);
             }
           }
-
           break;
         }
-        case 'add_file':
-        case 'change': {
-          if (type === 'add_file') {
-            this.#size++;
-          }
-
+        case 'add_file': {
+          this.#size++;
           let content = '';
-
-          /**
-           * @note This check is purely for the editor. The way we detect this is not
-           * bullet-proof and it's a best guess so there might be false-positives.
-           * The reason we do this is because we don't want to display binary files
-           * in the editor nor allow to edit them.
-           */
           const isBinary = isBinaryFile(buffer);
 
           if (!isBinary) {
             content = this.#decodeFileContent(buffer);
+            versionHistoryStore.addVersion(sanitizedPath, content, 'Initial version');
+            
+            // Track as a new file
+            this.#newFiles.add(sanitizedPath);
           }
 
           this.files.setKey(sanitizedPath, { type: 'file', content, isBinary });
+          break;
+        }
+        case 'change': {
+          let content = '';
+          const isBinary = isBinaryFile(buffer);
 
+          if (!isBinary) {
+            content = this.#decodeFileContent(buffer);
+            
+            // If this is a new file's first change, mark it as existing
+            if (this.#newFiles.has(sanitizedPath)) {
+              this.#existingFiles.add(sanitizedPath);
+              this.#newFiles.delete(sanitizedPath);
+            } 
+            // Only mark as modified if it's already an existing file
+            else if (this.#existingFiles.has(sanitizedPath)) {
+              const newUnsavedFiles = new Set(workbenchStore.unsavedFiles.get());
+              newUnsavedFiles.add(sanitizedPath);
+              workbenchStore.unsavedFiles.set(newUnsavedFiles);
+            }
+          }
+
+          this.files.setKey(sanitizedPath, { type: 'file', content, isBinary });
           break;
         }
         case 'remove_file': {
           this.#size--;
           this.files.setKey(sanitizedPath, undefined);
+          this.#existingFiles.delete(sanitizedPath);
+          this.#newFiles.delete(sanitizedPath);
           break;
         }
         case 'update_directory': {
-          // we don't care about these events
           break;
         }
       }
@@ -205,16 +222,8 @@ function isBinaryFile(buffer: Uint8Array | undefined) {
   return getEncoding(convertToBuffer(buffer), { chunkLength: 100 }) === 'binary';
 }
 
-/**
- * Converts a `Uint8Array` into a Node.js `Buffer` by copying the prototype.
- * The goal is to  avoid expensive copies. It does create a new typed array
- * but that's generally cheap as long as it uses the same underlying
- * array buffer.
- */
 function convertToBuffer(view: Uint8Array): Buffer {
   const buffer = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
-
   Object.setPrototypeOf(buffer, Buffer.prototype);
-
   return buffer as Buffer;
 }
