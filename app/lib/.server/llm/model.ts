@@ -16,7 +16,12 @@ export function getAnthropicModel(apiKey: string, model: string) {
 
   return anthropic(model);
 }
-export function getOpenAILikeModel(baseURL:string,apiKey: string, model: string) {
+
+export function getOpenAILikeModel(baseURL: string, apiKey: string, model: string) {
+  if (!baseURL) {
+    throw new Error('Base URL is required for OpenAI-like providers');
+  }
+
   const openai = createOpenAI({
     baseURL,
     apiKey,
@@ -24,6 +29,7 @@ export function getOpenAILikeModel(baseURL:string,apiKey: string, model: string)
 
   return openai(model);
 }
+
 export function getOpenAIModel(apiKey: string, model: string) {
   const openai = createOpenAI({
     apiKey,
@@ -58,12 +64,16 @@ export function getGroqModel(apiKey: string, model: string) {
 }
 
 export function getOllamaModel(baseURL: string, model: string) {
-  let Ollama = ollama(model);
+  if (!baseURL) {
+    baseURL = 'http://localhost:11434';
+  }
+  
+  const Ollama = ollama(model);
   Ollama.config.baseURL = `${baseURL}/api`;
   return Ollama;
 }
 
-export function getDeepseekModel(apiKey: string, model: string){
+export function getDeepseekModel(apiKey: string, model: string) {
   const openai = createOpenAI({
     baseURL: 'https://api.deepseek.com/beta',
     apiKey,
@@ -94,14 +104,19 @@ export function getModel(provider: string, model: string, env: Env) {
     case 'OpenRouter':
       return getOpenRouterModel(apiKey, model);
     case 'Google':
-      return getGoogleModel(apiKey, model)
+      return getGoogleModel(apiKey, model);
     case 'OpenAILike':
-      return getOpenAILikeModel(baseURL,apiKey, model);
+      if (!baseURL) {
+        throw new Error('Base URL is required for OpenAI-like providers');
+      }
+      return getOpenAILikeModel(baseURL, apiKey, model);
     case 'Deepseek':
-      return getDeepseekModel(apiKey, model)
+      return getDeepseekModel(apiKey, model);
     case 'Mistral':
-      return  getMistralModel(apiKey, model);
-    default:
+      return getMistralModel(apiKey, model);
+    case 'Ollama':
       return getOllamaModel(baseURL, model);
+    default:
+      throw new Error(`Unknown provider: ${provider}`);
   }
 }

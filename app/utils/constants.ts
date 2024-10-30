@@ -4,6 +4,8 @@ export const WORK_DIR_NAME = 'project';
 export const WORK_DIR = `/home/${WORK_DIR_NAME}`;
 export const MODIFICATIONS_TAG_NAME = 'bolt_file_modifications';
 export const MODEL_REGEX = /^\[Model: (.*?)\]\n\n/;
+
+// Default values will be overridden by localStorage in the client
 export const DEFAULT_MODEL = 'claude-3-5-sonnet-20240620';
 export const DEFAULT_PROVIDER = 'Anthropic';
 
@@ -49,7 +51,14 @@ export let MODEL_LIST: ModelInfo[] = [...staticModels];
 
 async function getOllamaModels(): Promise<ModelInfo[]> {
   try {
-    const base_url = import.meta.env.OLLAMA_API_BASE_URL || "http://localhost:11434";
+    // Get base URL from environment first
+    let base_url = import.meta.env.OLLAMA_API_BASE_URL || "http://localhost:11434";
+    
+    // If in browser, try to get from localStorage
+    if (typeof window !== 'undefined') {
+      base_url = localStorage.getItem('OLLAMA_API_BASE_URL') || base_url;
+    }
+      
     const response = await fetch(`${base_url}/api/tags`);
     const data = await response.json() as OllamaApiResponse;
 
@@ -64,32 +73,46 @@ async function getOllamaModels(): Promise<ModelInfo[]> {
 }
 
 async function getOpenAILikeModels(): Promise<ModelInfo[]> {
- try {
-   const base_url =import.meta.env.OPENAI_LIKE_API_BASE_URL || "";
-   if (!base_url) {
+  try {
+    // Get values from environment first
+    let base_url = import.meta.env.OPENAI_LIKE_API_BASE_URL || "";
+    let api_key = import.meta.env.OPENAI_LIKE_API_KEY || "";
+
+    // If in browser, try to get from localStorage
+    if (typeof window !== 'undefined') {
+      base_url = localStorage.getItem('OPENAI_LIKE_API_BASE_URL') || base_url;
+      api_key = localStorage.getItem('OPENAI_LIKE_API_KEY') || api_key;
+    }
+
+    if (!base_url) {
       return [];
-   }
-   const api_key = import.meta.env.OPENAI_LIKE_API_KEY ?? "";
-   const response = await fetch(`${base_url}/models`, {
-     headers: {
-       Authorization: `Bearer ${api_key}`,
-     }
-   });
+    }
+
+    const response = await fetch(`${base_url}/models`, {
+      headers: {
+        Authorization: `Bearer ${api_key}`,
+      }
+    });
     const res = await response.json() as any;
     return res.data.map((model: any) => ({
       name: model.id,
       label: model.id,
       provider: 'OpenAILike',
     }));
- }catch (e) {
-   return []
- }
-
+  } catch (e) {
+    return [];
+  }
 }
+
 async function initializeModelList(): Promise<void> {
   const ollamaModels = await getOllamaModels();
   const openAiLikeModels = await getOpenAILikeModels();
-  MODEL_LIST = [...ollamaModels,...openAiLikeModels, ...staticModels];
+  MODEL_LIST = [...ollamaModels, ...openAiLikeModels, ...staticModels];
 }
-initializeModelList().then();
+
+// Only initialize in browser environment
+if (typeof window !== 'undefined') {
+  initializeModelList().then();
+}
+
 export { getOllamaModels, getOpenAILikeModels, initializeModelList };

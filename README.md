@@ -83,6 +83,7 @@ GROQ_API_KEY=XXX
 OPENAI_API_KEY=XXX
 ANTHROPIC_API_KEY=XXX
 ```
+4. You can now optionally configure API keys and other settings directly from the settings UI in the application via the gear icon on the prompt text area.
 
 Optionally, you can set the debug level:
 
@@ -124,6 +125,8 @@ This will start the Remix Vite development server. You will need Google Chrome C
 ## Tips and Tricks
 
 Here are some tips to get the most out of Bolt.new:
+
+- **Settings Management**: You can now manage your API keys, base URLs, and current provider dynamically via the settings UI. This allows for real-time changes without needing to restart the application.
 
 - **Be specific about your stack**: If you want to use specific frameworks or libraries (like Astro, Tailwind, ShadCN, or any other popular JavaScript framework), mention them in your initial prompt to ensure Bolt scaffolds the project accordingly.
 

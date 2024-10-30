@@ -34,33 +34,58 @@ function extractModelFromMessage(message: Message): { model: string; content: st
     return { model, content };
   }
 
-  // Default model if not specified
-  return { model: DEFAULT_MODEL, content: message.content };
+  return { model: 'claude-3-5-sonnet-20240620', content: message.content };
+}
+
+function determineProvider(model: string, env: Env): string {
+  // First check if it's a static model
+  const staticModel = MODEL_LIST.find((m) => m.name === model);
+  if (staticModel) {
+    return staticModel.provider;
+  }
+
+  // Check if it's an Ollama model by checking if it contains common Ollama model names
+  if (env.OLLAMA_API_BASE_URL && (model.includes('llama') || model.includes('mistral'))) {
+    return 'Ollama';
+  }
+
+  // Check if it's an OpenAI-like model
+  if (env.OPENAI_LIKE_API_BASE_URL) {
+    return 'OpenAILike';
+  }
+
+  // Default to Anthropic if no other provider is determined
+  return 'Anthropic';
 }
 
 export function streamText(messages: Messages, env: Env, options?: StreamingOptions) {
-  let currentModel = DEFAULT_MODEL;
+  let currentModel = extractModelFromMessage(messages[0]).model;
   const processedMessages = messages.map((message) => {
     if (message.role === 'user') {
       const { model, content } = extractModelFromMessage(message);
-      if (model && MODEL_LIST.find((m) => m.name === model)) {
-        currentModel = model; // Update the current model
+      if (model) {
+        currentModel = model;
       }
       return { ...message, content };
     }
     return message;
   });
 
-  const provider = MODEL_LIST.find((model) => model.name === currentModel)?.provider || DEFAULT_PROVIDER;
+  // Determine the provider based on the model and environment
+  const provider = determineProvider(currentModel, env);
 
-  return _streamText({
-    model: getModel(provider, currentModel, env),
-    system: getSystemPrompt(),
-    maxTokens: MAX_TOKENS,
-    // headers: {
-    //   'anthropic-beta': 'max-tokens-3-5-sonnet-2024-07-15',
-    // },
-    messages: convertToCoreMessages(processedMessages),
-    ...options,
-  });
+  console.log('Using provider:', provider, 'for model:', currentModel);
+
+  try {
+    return _streamText({
+      model: getModel(provider, currentModel, env),
+      system: getSystemPrompt(),
+      maxTokens: MAX_TOKENS,
+      messages: convertToCoreMessages(processedMessages),
+      ...options,
+    });
+  } catch (error) {
+    console.error('Error in streamText:', error);
+    throw error;
+  }
 }

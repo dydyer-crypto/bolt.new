@@ -44,9 +44,10 @@ interface DialogButtonProps {
   type: 'primary' | 'secondary' | 'danger';
   children: ReactNode;
   onClick?: (event: React.UIEvent) => void;
+  className?: string;
 }
 
-export const DialogButton = memo(({ type, children, onClick }: DialogButtonProps) => {
+export const DialogButton = memo(({ type, children, onClick, className }: DialogButtonProps) => {
   return (
     <button
       className={classNames(
@@ -59,6 +60,7 @@ export const DialogButton = memo(({ type, children, onClick }: DialogButtonProps
           'bg-bolt-elements-button-danger-background text-bolt-elements-button-danger-text hover:bg-bolt-elements-button-danger-backgroundHover':
             type === 'danger',
         },
+        className
       )}
       onClick={onClick}
     >
@@ -84,7 +86,7 @@ export const DialogTitle = memo(({ className, children, ...props }: RadixDialog.
 export const DialogDescription = memo(({ className, children, ...props }: RadixDialog.DialogDescriptionProps) => {
   return (
     <RadixDialog.Description
-      className={classNames('px-5 py-4 text-bolt-elements-textPrimary text-md', className)}
+      className={classNames('text-bolt-elements-textPrimary text-md', className)}
       {...props}
     >
       {children}

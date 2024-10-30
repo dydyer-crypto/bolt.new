@@ -10,7 +10,8 @@ import { classNames } from '~/utils/classNames';
 import { MODEL_LIST, DEFAULT_PROVIDER } from '~/utils/constants';
 import { Messages } from './Messages.client';
 import { SendButton } from './SendButton.client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { Settings } from './SettingsModal';
 
 import styles from './BaseChat.module.scss';
 
@@ -22,18 +23,19 @@ const EXAMPLE_PROMPTS = [
   { text: 'How do I center a div?' },
 ];
 
-const providerList = [...new Set(MODEL_LIST.map((model) => model.provider))]
+const modelProviders = new Set(MODEL_LIST.map((model) => model.provider));
+const additionalProviders = ['Ollama', 'OpenAILike'].filter(provider => !modelProviders.has(provider));
+const providerList = [...modelProviders, ...additionalProviders];
 
-const ModelSelector = ({ model, setModel, modelList, providerList }) => {
-  const [provider, setProvider] = useState(DEFAULT_PROVIDER);
+const ModelSelector = ({ model, setModel, modelList, currentProvider, onProviderChange }) => {
   return (
     <div className="mb-2">
       <select
-        value={provider}
+        value={currentProvider}
         onChange={(e) => {
-          setProvider(e.target.value);
+          onProviderChange(e.target.value);
           const firstModel = [...modelList].find(m => m.provider == e.target.value);
-          setModel(firstModel ? firstModel.name : '');
+          if (setModel) setModel(firstModel ? firstModel.name : '');
         }}
         className="w-full p-2 rounded-lg border border-bolt-elements-borderColor bg-bolt-elements-prompt-background text-bolt-elements-textPrimary focus:outline-none"
       >
@@ -42,19 +44,13 @@ const ModelSelector = ({ model, setModel, modelList, providerList }) => {
             {provider}
           </option>
         ))}
-        <option key="Ollama" value="Ollama">
-          Ollama
-        </option>
-        <option key="OpenAILike" value="OpenAILike">
-          OpenAILike
-        </option>
       </select>
       <select
         value={model}
-        onChange={(e) => setModel(e.target.value)}
+        onChange={(e) => setModel && setModel(e.target.value)}
         className="w-full p-2 rounded-lg border border-bolt-elements-borderColor bg-bolt-elements-prompt-background text-bolt-elements-textPrimary focus:outline-none"
       >
-        {[...modelList].filter(e => e.provider == provider && e.name).map((modelOption) => (
+        {[...modelList].filter(e => e.provider == currentProvider && e.name).map((modelOption) => (
           <option key={modelOption.name} value={modelOption.name}>
             {modelOption.label}
           </option>
@@ -78,7 +74,7 @@ interface BaseChatProps {
   promptEnhanced?: boolean;
   input?: string;
   model: string;
-  setModel: (model: string) => void;
+  setModel?: (model: string) => void; // Make setModel optional
   handleStop?: () => void;
   sendMessage?: (event: React.UIEvent, messageInput?: string) => void;
   handleInputChange?: (event: React.ChangeEvent<HTMLTextAreaElement>) => void;
@@ -108,6 +104,16 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
     ref,
   ) => {
     const TEXTAREA_MAX_HEIGHT = chatStarted ? 400 : 200;
+    const [settingsOpen, setSettingsOpen] = useState(false);
+    const [provider, setProvider] = useState(DEFAULT_PROVIDER);
+
+    // Load saved settings on mount
+    useEffect(() => {
+      const savedProvider = localStorage.getItem('DEFAULT_PROVIDER');
+      const savedModel = localStorage.getItem('DEFAULT_MODEL');
+      if (savedProvider) setProvider(savedProvider);
+      if (savedModel && setModel) setModel(savedModel);
+    }, [setModel]);
 
     return (
       <div
@@ -153,12 +159,17 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                   'sticky bottom-0': chatStarted,
                 })}
               >
-                <ModelSelector
-                  model={model}
-                  setModel={setModel}
-                  modelList={MODEL_LIST}
-                  providerList={providerList}
-                />
+                <ClientOnly>
+                  {() => (
+                    <ModelSelector
+                      model={model}
+                      setModel={setModel}
+                      modelList={MODEL_LIST}
+                      currentProvider={provider}
+                      onProviderChange={setProvider}
+                    />
+                  )}
+                </ClientOnly>
                 <div
                   className={classNames(
                     'shadow-sm border border-bolt-elements-borderColor bg-bolt-elements-prompt-background backdrop-filter backdrop-blur-[8px] rounded-lg overflow-hidden',
@@ -207,6 +218,13 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                   </ClientOnly>
                   <div className="flex justify-between text-sm p-4 pt-2">
                     <div className="flex gap-1 items-center">
+                      <IconButton
+                        title="Settings"
+                        className="mr-2"
+                        onClick={() => setSettingsOpen(true)}
+                      >
+                        <div className="i-ph:gear text-xl" />
+                      </IconButton>
                       <IconButton
                         title="Enhance prompt"
                         disabled={input.length === 0 || enhancingPrompt}
@@ -263,6 +281,17 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
           </div>
           <ClientOnly>{() => <Workbench chatStarted={chatStarted} isStreaming={isStreaming} />}</ClientOnly>
         </div>
+        <Settings 
+          open={settingsOpen} 
+          onOpenChange={setSettingsOpen} 
+          onSettingsUpdate={() => {
+            // Reload saved settings when settings are updated
+            const savedProvider = localStorage.getItem('DEFAULT_PROVIDER');
+            const savedModel = localStorage.getItem('DEFAULT_MODEL');
+            if (savedProvider) setProvider(savedProvider);
+            if (savedModel && setModel) setModel(savedModel);
+          }}
+        />
       </div>
     );
   },

@@ -23,6 +23,31 @@ const toastAnimation = cssTransition({
 
 const logger = createScopedLogger('Chat');
 
+// Helper function to get stored credentials
+const getStoredCredentials = (currentProvider) => {
+  if (typeof window === 'undefined') return {};
+  
+  const credentials = {
+    apiKeys: {
+      ANTHROPIC_API_KEY: localStorage.getItem('ANTHROPIC_API_KEY'),
+      OPENAI_API_KEY: localStorage.getItem('OPENAI_API_KEY'),
+      GOOGLE_GENERATIVE_AI_API_KEY: localStorage.getItem('GOOGLE_GENERATIVE_AI_API_KEY'),
+      GROQ_API_KEY: localStorage.getItem('GROQ_API_KEY'),
+      OPEN_ROUTER_API_KEY: localStorage.getItem('OPEN_ROUTER_API_KEY'),
+      DEEPSEEK_API_KEY: localStorage.getItem('DEEPSEEK_API_KEY'),
+      MISTRAL_API_KEY: localStorage.getItem('MISTRAL_API_KEY'),
+      OPENAI_LIKE_API_KEY: localStorage.getItem('OPENAI_LIKE_API_KEY'),
+    },
+    baseUrls: {
+      OLLAMA_API_BASE_URL: localStorage.getItem('OLLAMA_API_BASE_URL'),
+      OPENAI_LIKE_API_BASE_URL: localStorage.getItem('OPENAI_LIKE_API_BASE_URL'),
+    },
+    currentProvider
+  };
+
+  return credentials;
+};
+
 export function Chat() {
   renderLogger.trace('Chat');
 
@@ -74,6 +99,12 @@ export const ChatImpl = memo(({ initialMessages, storeMessageHistory }: ChatProp
 
   const [chatStarted, setChatStarted] = useState(initialMessages.length > 0);
   const [model, setModel] = useState(DEFAULT_MODEL);
+  const [provider, setProvider] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('DEFAULT_PROVIDER') || 'Anthropic';
+    }
+    return 'Anthropic';
+  });
 
   const { showChat } = useStore(chatStore);
 
@@ -89,6 +120,7 @@ export const ChatImpl = memo(({ initialMessages, storeMessageHistory }: ChatProp
       logger.debug('Finished streaming');
     },
     initialMessages,
+    body: getStoredCredentials(provider),
   });
 
   const { enhancingPrompt, promptEnhanced, enhancePrompt, resetEnhancer } = usePromptEnhancer();
@@ -172,6 +204,8 @@ export const ChatImpl = memo(({ initialMessages, storeMessageHistory }: ChatProp
 
     runAnimation();
 
+    const credentials = getStoredCredentials(provider);
+
     if (fileModifications !== undefined) {
       const diff = fileModificationsToHTML(fileModifications);
 
@@ -182,7 +216,10 @@ export const ChatImpl = memo(({ initialMessages, storeMessageHistory }: ChatProp
        * manually reset the input and we'd have to manually pass in file attachments. However, those
        * aren't relevant here.
        */
-      append({ role: 'user', content: `[Model: ${model}]\n\n${diff}\n\n${_input}` });
+      append(
+        { role: 'user', content: `[Model: ${model}]\n\n${diff}\n\n${_input}` },
+        { options: { body: credentials } }
+      );
 
       /**
        * After sending a new message we reset all modifications since the model
@@ -190,7 +227,10 @@ export const ChatImpl = memo(({ initialMessages, storeMessageHistory }: ChatProp
        */
       workbenchStore.resetAllFileModifications();
     } else {
-      append({ role: 'user', content: `[Model: ${model}]\n\n${_input}` });
+      append(
+        { role: 'user', content: `[Model: ${model}]\n\n${_input}` },
+        { options: { body: credentials } }
+      );
     }
 
     setInput('');

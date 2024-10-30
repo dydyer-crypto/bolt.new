@@ -11,7 +11,34 @@ export async function action(args: ActionFunctionArgs) {
 }
 
 async function chatAction({ context, request }: ActionFunctionArgs) {
-  const { messages } = await request.json<{ messages: Messages }>();
+  const { messages, apiKeys, baseUrls, currentProvider } = await request.json<{ 
+    messages: Messages;
+    apiKeys?: Record<string, string>;
+    baseUrls?: Record<string, string>;
+    currentProvider?: string;
+  }>();
+
+  // Add API keys and base URLs to cloudflare env if provided
+  if (apiKeys) {
+    Object.entries(apiKeys).forEach(([key, value]) => {
+      if (value) {
+        context.cloudflare.env[key] = value;
+      }
+    });
+  }
+
+  if (baseUrls) {
+    Object.entries(baseUrls).forEach(([key, value]) => {
+      if (value) {
+        context.cloudflare.env[key] = value;
+      }
+    });
+  }
+
+  // Set current provider in env for model selection
+  if (currentProvider) {
+    context.cloudflare.env.CURRENT_PROVIDER = currentProvider;
+  }
 
   const stream = new SwitchableStream();
 
